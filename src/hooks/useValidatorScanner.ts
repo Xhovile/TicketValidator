@@ -4,6 +4,7 @@ import { soundFX } from '../utils/audio';
 import { scanTicket } from '../lib/buymeshoApi';
 import { mapValidatorTicket } from '../lib/validatorMappers';
 import { getStoredToken } from '../lib/buymeshoApi';
+import { decodeTicketCredential, isSignedTicketCredential, verifyTicketCredential } from '../lib/ticketCredential';
 
 type ScanResult = {
   ticket: Ticket;
@@ -54,7 +55,24 @@ export function useValidatorScanner({ selectedEvent, currentUser, activeSession,
 
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const effectiveOffline = !isOnline || isSimulatedOffline;
-    const foundTicket = tickets.find((ticket) => ticket.qrPayload === scannedCode || ticket.id === scannedCode);
+    const signedCredential = isSignedTicketCredential(scannedCode)
+      ? await verifyTicketCredential(scannedCode)
+      : null;
+
+    if (isSignedTicketCredential(scannedCode) && !signedCredential) {
+      soundFX.playError();
+      setActiveScanResult(null);
+      return;
+    }
+
+    if (signedCredential && signedCredential.eid !== selectedEvent.id) {
+      soundFX.playError();
+      setActiveScanResult(null);
+      return;
+    }
+
+    const lookupCode = signedCredential?.tid ?? decodeTicketCredential(scannedCode)?.tid ?? scannedCode;
+    const foundTicket = tickets.find((ticket) => ticket.qrPayload === scannedCode || ticket.id === lookupCode);
 
     if (!foundTicket) {
       soundFX.playError();
